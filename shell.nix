@@ -7,5 +7,6 @@ pkgs.mkShell {
     gnumake
     qemu
     qemu_kvm
+    bochs
   ];
 }

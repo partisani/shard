@@ -1,9 +1,11 @@
 format binary as 'bin'
 use16
 
+KERNEL_LOCATION = 0x1000
+
 org 0x7c00
     
-    mov ax, 0x07c0
+    mov ax, 0x0
     mov ds, ax
     mov es, ax
     mov fs, ax
@@ -16,40 +18,74 @@ org 0x7c00
     jmp 0:_start
 
 _start:
-    int 0x13                    ; reset disk
-
-    mov ax, 0x07e0
-    mov es, ax
-    mov bx, 0                   ; extended bootloader will be at es:bx (0x7e00)
-
-    mov ah, 2                   ; read sectors
-    mov al, 1                   ; 1 sector (512 bytes)
-    mov ch, 0                   ; chs is weird, ignore ch
-    mov cl, 2                   ; 2nd sector
-    mov dl, 0x80                ; disk number
-    mov dh, 0                   ; chs is weird, ignore dh
-    int 0x13
+    mov al, 3                   ; video mode 3
+    int 0x10                    ; ah is already 0, switch video mode
     
-    jc _err                     ; print 'e' and reset
+    mov si, msg.boot
+    call _puts
 
-    jmp main                    ; jump to extended bootloader    
+    mov es, 0
+    mov si, kernel_dap
+    mov ah, 0x42
+    int 0x13
+
+    mov si, msg.disk_read_err
+    jc _err
+
+    ;; enable a20 line
+    in al, 0x92
+    or al, 2
+    out 0x92, al
+
+    cli                         ; disable interrupts temporarily
+    lgdt [gdtr]                 ; load gdt
+
+    mov eax, cr0                ; save cr0
+    or eax, 1                   ; enable PE bit
+    mov cr0, eax                ; write it back
+
+    mov ax, data_seg            ; setting registers correctly
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+    mov ebp, 0x90000
+    mov esp, ebp
+
+    jmp code_seg:KERNEL_LOCATION
+
+_puts:
+    mov ah, 0x0e                ; teletype output interrupt code
+    lodsb                       ; load byte
+    cmp al, 0
+    jz .end                     ; if zero, return
+    int 0x10                    ; print character
+    jmp _puts                   ; loop
+    .end: ret
     
 _err:
-    mov ah, 0x0e
-    mov al, 'e'
-    mov bh, 0
-    int 0x10
+    call _puts
+    cli
+    hlt
 
-    jmp 0x7c00
+align 4                         ; it needs to be 4 byte aligned
+kernel_dap:                     ; DAPS = Disk Address Packet
+    db 16                       ; packet size
+    db 0                        ; padding
+    .block_count: dw 1          ; how many blocks to load
+    .write_addrs:
+    dw KERNEL_LOCATION          ; offset to write blocks to
+    dw 0                        ; segment to write blocks to
+    .read_from:
+    dd 1                        ; start from block #
+    dd 0                        ; extra bytes
+    
+msg:
+    .disk_read_err: db "Could not read kernel.", 13, 10, 0
+    .boot: db "Initialized.", 13, 10, 0
 
+include "gdt.asm"
+        
 rb (0x7C00 + 510) - $           ; reserve 512 - (bytes of machine code written)
 dw 0xAA55
-
-org 0x7e00
-
-main:
-    mov ah, 0x0e
-    mov al, 'a'
-    mov bh, 0
-    int 0x10
-    hlt
