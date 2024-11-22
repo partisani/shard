@@ -4,7 +4,7 @@ SRCDIR := src
 ${OUTDIR}/boot.img: ${OUTDIR}/os.bin
 	-rm $@
 	bximage -func=create -q -hd=10M $@
-	dd if=$? of=$@ conv=notrunc bs=512 count=1
+	dd if=$? of=$@ conv=notrunc bs=512
 
 ${OUTDIR}/bootloader.bin: ${SRCDIR}/boot/main.asm
 	fasm $? $@
